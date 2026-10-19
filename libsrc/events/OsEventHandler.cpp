@@ -16,6 +16,33 @@
 #include <wtsapi32.h>
 #include <powerbase.h>
 
+// Power*SuspendResumeNotification доступны только с Windows 8 (winuser.h объявляет их
+// при _WIN32_WINNT >= 0x0602). Для совместимости с Win7 загружаем динамически.
+using PowerRegisterSuspendResumeNotification_t = DWORD(WINAPI*)(ULONG, HANDLE, PHANDLE);
+using PowerUnregisterSuspendResumeNotification_t = DWORD(WINAPI*)(HANDLE);
+
+static PowerRegisterSuspendResumeNotification_t loadPowerRegister()
+{
+	HMODULE user32 = GetModuleHandleW(L"user32.dll");
+	if (!user32)
+	{
+		return nullptr;
+	}
+	return reinterpret_cast<PowerRegisterSuspendResumeNotification_t>(
+		GetProcAddress(user32, "PowerRegisterSuspendResumeNotification"));
+}
+
+static PowerUnregisterSuspendResumeNotification_t loadPowerUnregister()
+{
+	HMODULE user32 = GetModuleHandleW(L"user32.dll");
+	if (!user32)
+	{
+		return nullptr;
+	}
+	return reinterpret_cast<PowerUnregisterSuspendResumeNotification_t>(
+		GetProcAddress(user32, "PowerUnregisterSuspendResumeNotification"));
+}
+
 #pragma comment( lib, "wtsapi32.lib" )
 #pragma comment(lib, "PowrProf.lib")
 
@@ -331,8 +358,16 @@ bool OsEventHandlerWindows::registerOsEventHandler()
 	bool isRegistered{ _isSuspendRegistered };
 	if (!_isSuspendRegistered)
 	{
+		auto powerRegister = loadPowerRegister();
+		if (!powerRegister)
+		{
+			// API отсутствует (Windows 7) — suspend/resume-события недоступны, но это не фатально
+			Info(_log, "PowerRegisterSuspendResumeNotification not available on this OS, suspend/resume events disabled");
+			return false;
+		}
+
 		DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS notificationsParameters = { handlePowerNotifications, NULL };
-		if (PowerRegisterSuspendResumeNotification(DEVICE_NOTIFY_CALLBACK, (HANDLE)&notificationsParameters, &_notifyHandle) == ERROR_SUCCESS)
+		if (powerRegister(DEVICE_NOTIFY_CALLBACK, (HANDLE)&notificationsParameters, &_notifyHandle) == ERROR_SUCCESS)
 		{
 			isRegistered = true;
 		}
@@ -355,7 +390,11 @@ void OsEventHandlerWindows::unregisterOsEventHandler()
 	{
 		if (_notifyHandle != NULL)
 		{
-			PowerUnregisterSuspendResumeNotification(_notifyHandle);
+			auto powerUnregister = loadPowerUnregister();
+			if (powerUnregister)
+			{
+				powerUnregister(_notifyHandle);
+			}
 		}
 		_notifyHandle = NULL;
 		_isSuspendRegistered = false;
