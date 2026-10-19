@@ -11,8 +11,6 @@ on:
         description: "Собирать MF-граббер"
         type: boolean
         default: true
-  push:
-    branches: [master]
 
 jobs:
   build:
@@ -25,23 +23,30 @@ jobs:
         with:
           submodules: recursive
 
-      # --- Qt 5.15.2: последняя ветка с поддержкой Win7 ---
-      # Ставится ПЕРЕД setup-python, чтобы aqt взял питон раннера, а не 3.14
-      - name: Install Qt 5.15.2 (MSVC 2019 x64)
-        uses: jurplel/install-qt-action@v4
+      # --- Python 3.12: только для aqt (aqt не дружит с 3.14) ---
+      - name: Setup Python 3.12 (for aqt)
+        uses: actions/setup-python@v5
         with:
-          version: "5.15.2"
-          arch: win64_msvc2019_64
-          modules: "qtserialport qtwebsockets"
-          cache: true
+          python-version: "3.12"
+
+      # --- Qt 5.15.2 ставим явным вызовом aqt, без install-qt-action ---
+      - name: Install Qt 5.15.2 (MSVC 2019 x64)
+        shell: pwsh
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 5.15.2 win64_msvc2019_64 -m qtserialport qtwebsockets --outputdir C:\Qt
+          if ($LASTEXITCODE -ne 0) { throw "aqt install-qt failed" }
+          "QT_ROOT_DIR=C:\Qt\5.15.2\msvc2019_64" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-ChildItem "C:\Qt\5.15.2\msvc2019_64\bin\qmake.exe" | Out-Null
 
       # --- Python 3.14: заголовки/либы для effectengine (ABI-совместим с PythonVista 3.14.8 на Win7) ---
-      - name: Setup Python 3.14
+      - name: Setup Python 3.14 (build headers)
         uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
       - name: Install Ninja + OpenSSL (choco)
+        shell: pwsh
         run: choco install ninja openssl -y --no-progress
 
       # --- Устанавливаем тулсет v142 (14.29) в предустановленный VS 2022 ---
@@ -92,7 +97,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
       # --- Упаковка: exe + Qt DLL + OpenSSL + ассеты ---
       - name: Package
