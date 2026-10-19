@@ -11,6 +11,12 @@
 #include <strmif.h>
 #include <comdef.h>
 
+// Константа объявлена в mfreadwrite.h только при WINVER >= 0x0602 (Win8 SDK).
+// Для сборки под Win7 (_WIN32_WINNT=0x0601) определяем вручную — значение из SDK.
+#ifndef MF_SOURCE_READER_CURRENT_TYPE_INDEX
+#define MF_SOURCE_READER_CURRENT_TYPE_INDEX 0xffffffff
+#endif
+
 #pragma comment (lib, "ole32.lib")
 #pragma comment (lib, "mf.lib")
 #pragma comment (lib, "mfplat.lib")
