@@ -6,11 +6,11 @@ on:
       effect_engine:
         description: "Собирать EffectEngine (требует PythonVista 3.14.8 на целевой машине)"
         type: boolean
-        default: true
+        default: false
       media_foundation:
         description: "Собирать MF-граббер"
         type: boolean
-        default: true
+        default: false
 
 jobs:
   build:
