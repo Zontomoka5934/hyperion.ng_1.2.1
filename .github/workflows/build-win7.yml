@@ -111,11 +111,11 @@ jobs:
 
           & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-compiler-runtime --no-translations (Join-Path $out "hyperiond.exe")
 
-          # Ассеты веб-интерфейса, эффектов и конфиги, если сборка их не положила рядом с exe
-          foreach ($d in @("assets", "webconfig", "effects")) {
-            $src = Get-ChildItem build -Recurse -Directory -Filter $d -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($src) { Copy-Item $src.FullName $out -Recurse -Force }
-          }
+          # Статика веб-интерфейса, эффектов и прочие ассеты — из корня репозитория
+          Copy-Item "assets\webconfig" (Join-Path $out "webconfig") -Recurse -Force
+          Copy-Item "assets\effects" (Join-Path $out "effects") -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "assets\firmware" (Join-Path $out "firmware") -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "assets\schema" (Join-Path $out "schema") -Recurse -Force -ErrorAction SilentlyContinue
 
           Compress-Archive -Path "$out\*" -DestinationPath "hyperion-win7-x64.zip" -Force
           Get-ChildItem $out | Format-Table
