@@ -50,7 +50,14 @@ jobs:
 
       - name: Install Ninja + OpenSSL (choco)
         shell: pwsh
-        run: choco install ninja openssl -y --no-progress
+        run: |
+          choco install ninja -y --no-progress
+          $installed = $false
+          foreach ($v in '3.5.1', '3.4.1', '3.2.4') {
+            choco install openssl --version=$v -y --no-progress
+            if ($LASTEXITCODE -eq 0) { $installed = $true; break }
+          }
+          if (-not $installed) { throw "OpenSSL install failed" }
 
       # --- Устанавливаем тулсет v142 (14.29) в предустановленный VS 2022 ---
       - name: Install MSVC v142 toolset
