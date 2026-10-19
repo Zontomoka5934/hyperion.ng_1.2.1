@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       effect_engine:
-        description: "Собирать EffectEngine (требует Python 3.14/PythonVista на целевой машине)"
+        description: "Собирать EffectEngine (требует PythonVista 3.14.8 на целевой машине)"
         type: boolean
         default: true
       media_foundation:
@@ -25,13 +25,14 @@ jobs:
         with:
           submodules: recursive
 
-      # --- Python 3.14 (ABI-совместим с PythonVista 3.14.8 на Win7) ---
+      # --- Python 3.14: заголовки/либы для effectengine (ABI-совместим с PythonVista 3.14.8 на Win7) ---
       - name: Setup Python 3.14
         uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
       # --- Qt 5.15.2: последняя ветка с поддержкой Win7 ---
+      # python-version 3.11 + закреплённый aqt — чтобы aqt не спотыкался о Python 3.14
       - name: Install Qt 5.15.2 (MSVC 2019 x64)
         uses: jurplel/install-qt-action@v4
         with:
@@ -39,6 +40,8 @@ jobs:
           arch: win64_msvc2019_64
           modules: "qtserialport qtwebsockets"
           cache: true
+          python-version: "3.11"
+          aqtversion: "===3.1.7"
 
       - name: Install Ninja + OpenSSL (choco)
         run: choco install ninja openssl -y --no-progress
@@ -55,7 +58,7 @@ jobs:
                   '--add', 'Microsoft.VisualStudio.Component.VC.14.29.x86.x64',
                   '--quiet', '--norestart', '--nocache'
                 ) -Wait -PassThru
-          # 0 = ок, 3010 = перезагрузка (не нужна на раннере) — оба считаем успехом
+          # 0 = ок, 3010 = требуется перезагрузка (на раннере не актуальна) — оба считаем успехом
           if ($p.ExitCode -notin 0, 3010) { throw "VS modify failed: $($p.ExitCode)" }
 
       - name: Setup MSVC dev environment
@@ -69,7 +72,7 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
-          # Честно находим корень OpenSSL, куда его поставил choco
+          # Находим корень OpenSSL, куда его поставил choco
           $crypto = Get-ChildItem "$env:ChocolateyInstall\lib" -Recurse -Filter "libcrypto-3-x64.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($crypto) {
             $env:OPENSSL_ROOT_DIR = Split-Path (Split-Path $crypto.FullName)
@@ -107,16 +110,17 @@ jobs:
 
           & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-compiler-runtime --no-translations (Join-Path $out "hyperiond.exe")
 
-          # Ассеты веб-интерфейса и конфиги, если сборка их не положила рядом
+          # Ассеты веб-интерфейса, эффектов и конфиги, если сборка их не положила рядом с exe
           foreach ($d in @("assets", "webconfig", "effects")) {
             $src = Get-ChildItem build -Recurse -Directory -Filter $d -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($src) { Copy-Item $src.FullName $out -Recurse -Force }
           }
 
           # OpenSSL-зависимости
-          Get-ChildItem build -Recurse -Include "libssl-*.dll","libcrypto-*.dll" | ForEach-Object { Copy-Item $_.FullName $out -Force }
+          Get-ChildItem build -Recurse -Include "libssl-*.dll","libcrypto-*.dll" -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item $_.FullName $out -Force }
 
-          Compress-Archive -Path "$out\*" -DestinationPath "hyperion-win7-x64.zip"
+          Compress-Archive -Path "$out\*" -DestinationPath "hyperion-win7-x64.zip" -Force
           Get-ChildItem $out | Format-Table
 
       - name: Upload artifact
