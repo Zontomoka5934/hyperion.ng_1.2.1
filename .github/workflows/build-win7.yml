@@ -46,7 +46,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install Python deps for build scripts
-        run: python -m pip install jsonschema
+        run: python -m pip install jsonschema jinja2 pyyaml
 
       - name: Ensure Ninja
         shell: pwsh
