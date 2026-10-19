@@ -45,6 +45,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install Python deps for build scripts
+        run: python -m pip install jsonschema
+
       - name: Install Ninja + OpenSSL (choco)
         shell: pwsh
         run: choco install ninja openssl -y --no-progress
