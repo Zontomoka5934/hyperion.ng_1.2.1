@@ -25,14 +25,8 @@ jobs:
         with:
           submodules: recursive
 
-      # --- Python 3.14: заголовки/либы для effectengine (ABI-совместим с PythonVista 3.14.8 на Win7) ---
-      - name: Setup Python 3.14
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
       # --- Qt 5.15.2: последняя ветка с поддержкой Win7 ---
-      # python-version 3.11 + закреплённый aqt — чтобы aqt не спотыкался о Python 3.14
+      # Ставится ПЕРЕД setup-python, чтобы aqt взял питон раннера, а не 3.14
       - name: Install Qt 5.15.2 (MSVC 2019 x64)
         uses: jurplel/install-qt-action@v4
         with:
@@ -40,8 +34,12 @@ jobs:
           arch: win64_msvc2019_64
           modules: "qtserialport qtwebsockets"
           cache: true
-          python-version: "3.11"
-          aqtversion: "===3.1.7"
+
+      # --- Python 3.14: заголовки/либы для effectengine (ABI-совместим с PythonVista 3.14.8 на Win7) ---
+      - name: Setup Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Install Ninja + OpenSSL (choco)
         run: choco install ninja openssl -y --no-progress
