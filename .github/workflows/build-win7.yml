@@ -1,0 +1,127 @@
+name: Build hyperiond for Windows 7 (x64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      effect_engine:
+        description: "Собирать EffectEngine (требует Python 3.14/PythonVista на целевой машине)"
+        type: boolean
+        default: true
+      media_foundation:
+        description: "Собирать MF-граббер"
+        type: boolean
+        default: true
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # --- Python 3.14 (ABI-совместим с PythonVista 3.14.8 на Win7) ---
+      - name: Setup Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      # --- Qt 5.15.2: последняя ветка с поддержкой Win7 ---
+      - name: Install Qt 5.15.2 (MSVC 2019 x64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "5.15.2"
+          arch: win64_msvc2019_64
+          modules: "qtserialport qtwebsockets"
+          cache: true
+
+      - name: Install Ninja + OpenSSL (choco)
+        run: choco install ninja openssl -y --no-progress
+
+      # --- Устанавливаем тулсет v142 (14.29) в предустановленный VS 2022 ---
+      - name: Install MSVC v142 toolset
+        shell: pwsh
+        run: |
+          $vsInstaller = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          $vs = & "$vsInstaller\vswhere.exe" -latest -property installationPath
+          $p = Start-Process -FilePath "$vsInstaller\setup.exe" `
+                -ArgumentList @(
+                  'modify', "--installPath=`"$vs`"",
+                  '--add', 'Microsoft.VisualStudio.Component.VC.14.29.x86.x64',
+                  '--quiet', '--norestart', '--nocache'
+                ) -Wait -PassThru
+          # 0 = ок, 3010 = перезагрузка (не нужна на раннере) — оба считаем успехом
+          if ($p.ExitCode -notin 0, 3010) { throw "VS modify failed: $($p.ExitCode)" }
+
+      - name: Setup MSVC dev environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          vs-version: 2022
+          toolset: 14.29
+          arch: x64
+
+      # --- Конфигурация ---
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          # Честно находим корень OpenSSL, куда его поставил choco
+          $crypto = Get-ChildItem "$env:ChocolateyInstall\lib" -Recurse -Filter "libcrypto-3-x64.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($crypto) {
+            $env:OPENSSL_ROOT_DIR = Split-Path (Split-Path $crypto.FullName)
+            "OPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+          $eff = if ('${{ inputs.effect_engine }}' -ne 'false') { 'ON' } else { 'OFF' }
+          $mf  = if ('${{ inputs.media_foundation }}' -ne 'false') { 'ON' } else { 'OFF' }
+
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            "-DQTDIR=$env:QT_ROOT_DIR" `
+            "-DOPENSSL_ROOT_DIR=$env:OPENSSL_ROOT_DIR" `
+            "-DPython_ROOT_DIR=$env:pythonLocation" `
+            -DENABLE_DDA=OFF `
+            "-DENABLE_MF=$mf" `
+            "-DENABLE_EFFECTENGINE=$eff" `
+            "-DCMAKE_C_FLAGS=/D_WIN32_WINNT=0x0601" `
+            "-DCMAKE_CXX_FLAGS=/D_WIN32_WINNT=0x0601"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # --- Упаковка: exe + Qt DLL + OpenSSL + ассеты ---
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = "deploy"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $exe = Get-ChildItem build -Recurse -Filter "hyperiond.exe" | Select-Object -First 1
+          if (-not $exe) { throw "hyperiond.exe не найден после сборки" }
+          Copy-Item $exe.FullName $out
+
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-compiler-runtime --no-translations (Join-Path $out "hyperiond.exe")
+
+          # Ассеты веб-интерфейса и конфиги, если сборка их не положила рядом
+          foreach ($d in @("assets", "webconfig", "effects")) {
+            $src = Get-ChildItem build -Recurse -Directory -Filter $d -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($src) { Copy-Item $src.FullName $out -Recurse -Force }
+          }
+
+          # OpenSSL-зависимости
+          Get-ChildItem build -Recurse -Include "libssl-*.dll","libcrypto-*.dll" | ForEach-Object { Copy-Item $_.FullName $out -Force }
+
+          Compress-Archive -Path "$out\*" -DestinationPath "hyperion-win7-x64.zip"
+          Get-ChildItem $out | Format-Table
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperion-win7-x64
+          path: hyperion-win7-x64.zip
+          retention-days: 14
