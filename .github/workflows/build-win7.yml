@@ -34,7 +34,7 @@ jobs:
         shell: pwsh
         run: |
           pip install aqtinstall
-          aqt install-qt windows desktop 5.15.2 win64_msvc2019_64 -m qtserialport qtwebsockets --outputdir C:\Qt
+          aqt install-qt windows desktop 5.15.2 win64_msvc2019_64 --outputdir C:\Qt
           if ($LASTEXITCODE -ne 0) { throw "aqt install-qt failed" }
           "QT_ROOT_DIR=C:\Qt\5.15.2\msvc2019_64" | Out-File -FilePath $env:GITHUB_ENV -Append
           Get-ChildItem "C:\Qt\5.15.2\msvc2019_64\bin\qmake.exe" | Out-Null
